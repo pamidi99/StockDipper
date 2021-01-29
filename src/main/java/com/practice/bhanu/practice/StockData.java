@@ -18,4 +18,10 @@ public class StockData {
     double previousCose;
 
     double recentPeak;
+    
+    String recentPeakDay;
+    
+    double recentDip;
+    
+    String recentDipDay;
 }

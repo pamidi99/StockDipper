@@ -9,8 +9,11 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -20,41 +23,64 @@ import org.json.simple.parser.JSONParser;
 public class StockPicker {
 
     public static void main(String args[]) {
-        Map<String, Double> stocks = readLocalPeaks();
-        Map<String, StockData> tenStocks = new HashMap<>();
-        Map<String, StockData> twentyStocks = new HashMap<>();
-        for (Map.Entry<String, Double> entry : stocks.entrySet()) {
-            StockData sd = pickStocks(entry.getKey(), entry.getValue());
-            if (entry.getValue() - sd.current >= 20) {
-                twentyStocks.put(entry.getKey(), sd);
-            } else if (entry.getValue() - sd.current >= 10) {
-                tenStocks.put(entry.getKey(), sd);
+        List<StockData> stocks = readLocalPeaks();
+        List<StockData> tenStocks = new ArrayList<>();
+        List<StockData> twentyStocks = new ArrayList<>();
+        for (StockData entry : stocks) {
+            StockData sd = pickStocks(entry);
+            if (sd.recentPeak - sd.current >= 20) {
+                twentyStocks.add(sd);
+            } else if (sd.recentPeak - sd.current >= 10) {
+                tenStocks.add(sd);
             }
         }
+        sortStocksList(tenStocks);
+        sortStocksList(twentyStocks);
 
         if (!twentyStocks.isEmpty())
             System.out.println("************  Twenty dollar difference stocks ************");
-        DecimalFormat df = new DecimalFormat("0.00");
-        for (Map.Entry<String, StockData> entry : twentyStocks.entrySet()) {
-            StockData sd = entry.getValue();
-            System.out.println();
-            System.out.println("Ticker= " + entry.getKey() + "  currentPrice= $" + sd.current + " recentPeak= $"
-                    + sd.recentPeak + "  difference= $" + df.format(sd.recentPeak - sd.current));
-        }
+
+        printStocks(twentyStocks);
 
         if (!tenStocks.isEmpty())
             System.out.println("************   Ten dollar difference stocks ************");
+        printStocks(tenStocks);
 
-        for (Map.Entry<String, StockData> entry : tenStocks.entrySet()) {
-            StockData sd = entry.getValue();
-            System.out.println();
-            System.out.println("Ticker= " + entry.getKey() + "  currentPrice= $" + sd.current + " recentPeak= $"
-                    + sd.recentPeak + "  difference= $" + df.format(sd.recentPeak - sd.current));
-        }
     }
 
-    private static Map<String, Double> readLocalPeaks() {
-        Map<String, Double> stocks = new HashMap<>();
+    private static void printStocks(List<StockData> stocks) {
+        System.out.println();
+        DecimalFormat df = new DecimalFormat("0.00");
+        System.out.format("%8s%15s%15s%15s%20s%15s%20s", "TICKER", "CURRENT-PRICE", "DIFFERENCE", "RECENT-PEAK",
+                "RECENT-PEAK-DAY", "RECENT DIP", "RECENT-DIP-DAY");
+        System.out.println();
+        for (StockData sd : stocks) {
+
+            System.out.println();
+            System.out.format("%8s%15s%15s%15s%20s%15s%20s", sd.ticker, sd.current,
+                    df.format(sd.recentPeak - sd.current), df.format(sd.recentPeak), sd.recentPeakDay,
+                    df.format(sd.recentDip), sd.recentDipDay);
+            System.out.println();
+            /*
+             * System.out.println("Ticker= " + sd.ticker + "  currentPrice= $" +
+             * sd.current + " recentPeak= $" + sd.recentPeak + "  difference= $"
+             * + df.format(sd.recentPeak -
+             * sd.current)+" recentPeakDay= "+sd.recentPeakDay+" recentDip= $"
+             * +sd.recentDip+" recentDipDay="+sd.recentDipDay);
+             */
+        }
+        System.out.println();
+        System.out.println();
+
+    }
+
+    private static void sortStocksList(List<StockData> stocks) {
+        Collections.sort(stocks, (stock1,
+                stock2) -> (int) ((stock2.recentPeak - stock2.current) - (stock1.recentPeak - stock1.current)));
+    }
+
+    private static List<StockData> readLocalPeaks() {
+        List<StockData> stocks = new ArrayList<>();
         String line = "";
         String splitBy = ",";
         BufferedReader br = null;
@@ -65,7 +91,14 @@ public class StockPicker {
             while ((line = br.readLine()) != null) // returns a Boolean value
             {
                 String[] stock = line.split(splitBy); // use comma as separator
-                stocks.put(stock[0], Double.parseDouble(stock[1]));
+                StockData stockData = new StockData();
+                stockData.ticker = stock[0];
+                stockData.recentPeak = Double.parseDouble(stock[1]);
+                stockData.recentPeakDay = stock[2];
+                stockData.recentDip = Double.parseDouble(stock[3]);
+                stockData.recentDipDay = stock[4];
+                stocks.add(stockData);
+
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -81,10 +114,11 @@ public class StockPicker {
         return stocks;
     }
 
-    public static StockData pickStocks(String ticker, double recentPeak) {
+    public static StockData pickStocks(StockData stockData) {
         try {
             // create the HttpURLConnection
-            URL url = new URL("https://finnhub.io/api/v1/quote?symbol=" + ticker + "&token=bt4fhqv48v6u8ohnuid0");
+            URL url = new URL(
+                    "https://finnhub.io/api/v1/quote?symbol=" + stockData.ticker + "&token=bt4fhqv48v6u8ohnuid0");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
             // just want to do an HTTP GET here
@@ -110,12 +144,10 @@ public class StockPicker {
             JSONParser jsonParser = new JSONParser();
             JSONObject json = (JSONObject) jsonParser.parse(stringBuilder.toString());
 
-            StockData stockData = new StockData();
             stockData.open = process(json.get("o"));
             stockData.high = process(json.get("h"));
             stockData.low = process(json.get("l"));
             stockData.current = process(json.get("c"));
-            stockData.recentPeak = recentPeak;
             return stockData;
         } catch (Exception e) {
             e.printStackTrace();

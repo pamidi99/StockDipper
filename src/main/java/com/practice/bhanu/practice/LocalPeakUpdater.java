@@ -11,7 +11,9 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.json.simple.JSONObject;
@@ -20,39 +22,43 @@ import org.json.simple.parser.JSONParser;
 
 public class LocalPeakUpdater {
     static String parentDir;
-    
-    LocalPeakUpdater(){
+
+    LocalPeakUpdater() {
         try {
             // parsing a CSV file into BufferedReader class constructor
             parentDir = new File("..").getCanonicalPath();
-          
+
         } catch (IOException e) {
             e.printStackTrace();
-        } 
+        }
     }
+
     public static void main(String args[]) {
         try {
             // parsing a CSV file into BufferedReader class constructor
             parentDir = new File("..").getCanonicalPath();
-          
+
         } catch (IOException e) {
             System.out.print(e.getLocalizedMessage());
             e.printStackTrace();
-        } 
-        Map<String, Double> stocks = readLocalPeaks();
-        Map<String, Double> stocksUpdated = new HashMap<>();
-        for (Map.Entry<String, Double> entry : stocks.entrySet()) {
-            stocksUpdated.put(entry.getKey(), getThirtyDayPeak(entry.getKey()));
-            System.out.println("30 day peak of" + entry.getKey() + " is " + stocksUpdated.get(entry.getKey()));
+        }
+        List<String> stocks = readStockTickers();
+        Map<String, StockData> stocksUpdated = new HashMap<>();
+        for (String ticker : stocks) {
+            stocksUpdated.put(ticker, getThirtyDayPeak(ticker));
+            System.out.println("30 day peak of" + ticker + " is " + stocksUpdated.get(ticker).recentPeak);
         }
         writeToCsv(stocksUpdated);
     }
 
-    private static void writeToCsv(Map<String, Double> localPeaks) {
-        try (FileWriter writer = new FileWriter(parentDir+"\\localPeaks.csv"); BufferedWriter bw = new BufferedWriter(writer)) {
+    private static void writeToCsv(Map<String, StockData> localPeaks) {
+        try (FileWriter writer = new FileWriter(parentDir + "\\localPeaks.csv");
+                BufferedWriter bw = new BufferedWriter(writer)) {
 
-            for (Map.Entry<String, Double> localPeakEntry : localPeaks.entrySet()) {
-                bw.write(localPeakEntry.getKey() + "," + localPeakEntry.getValue());
+            for (Map.Entry<String, StockData> localPeakEntry : localPeaks.entrySet()) {
+                StockData stockData = localPeakEntry.getValue();
+                bw.write(localPeakEntry.getKey() + "," + stockData.recentPeak + "," + stockData.recentPeakDay + ","
+                        + stockData.recentDip + "," + stockData.recentDipDay);
                 bw.newLine();
             }
 
@@ -61,8 +67,9 @@ public class LocalPeakUpdater {
         }
     }
 
-    private static Map<String, Double> readLocalPeaks() {
-        Map<String, Double> stocks = new HashMap<>();
+    private static List<String> readStockTickers() {
+        List<String> stocks = new ArrayList<>();
+
         String line = "";
         String splitBy = ",";
         BufferedReader br = null;
@@ -73,7 +80,7 @@ public class LocalPeakUpdater {
             while ((line = br.readLine()) != null) // returns a Boolean value
             {
                 String[] stock = line.split(splitBy); // use comma as separator
-                stocks.put(stock[0], Double.parseDouble(stock[1]));
+                stocks.add(stock[0]);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -89,7 +96,7 @@ public class LocalPeakUpdater {
         return stocks;
     }
 
-    public static double getThirtyDayPeak(String ticker) {
+    public static StockData getThirtyDayPeak(String ticker) {
         try {
             // create the HttpURLConnection
             // https://cloud.iexapis.com/stable/stock/twtr/chart/5d?token=pk_5dfd15070aa04462a3df347e7cd7abc3
@@ -120,15 +127,34 @@ public class LocalPeakUpdater {
             JSONParser jsonParser = new JSONParser();
             JSONArray jsonArray = (JSONArray) jsonParser.parse(stringBuilder.toString());
             double high = 0;
+            String highDay = "";
+            double low = Double.MAX_VALUE;
+            String lowDay = "";
             for (int i = 0; i < jsonArray.size(); i++) {
                 JSONObject json = (JSONObject) jsonArray.get(i);
-                high = Math.max(high, process(json.get("uHigh")));
+                double currentDayHighValue = process(json.get("uHigh"));
+                double currentDayLowValue = process(json.get("uLow"));
+                if (currentDayHighValue > high) {
+                    high = currentDayHighValue;
+                    highDay = (String) json.get("date");
+                }
+                if (currentDayLowValue < low) {
+                    low = currentDayLowValue;
+                    lowDay = (String) json.get("date");
+                }
+
             }
-            return high;
+            StockData stockData = new StockData();
+            stockData.ticker = ticker;
+            stockData.recentPeak = high;
+            stockData.recentPeakDay = highDay;
+            stockData.recentDip = low;
+            stockData.recentDipDay = lowDay;
+            return stockData;
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return 0;
+        return null;
     }
 
     private static Double process(Object o) {
